@@ -1,0 +1,31 @@
+#version 330 core
+in vec3 vertexPosition;
+in vec3 vertexNormal;
+in vec2 vertexUV;
+
+uniform mat4 modelMatrix;
+uniform mat4 projectionMatrix;
+uniform mat4 viewMatrix;
+
+uniform float time;
+uniform vec3 windDir;
+uniform float windSpeed;
+
+out vec3 normal;
+out vec2 uv;
+
+float rippleNoise(vec2 uv)
+{
+    return sin(dot(uv, vec2(6.0, 3.5)) + time * windSpeed * 2.0)
+         * cos(dot(uv, vec2(2.5, 5.0)) + time * 1.5);
+}
+
+void main()
+{
+    vec3 pos = vertexPosition;
+    float ripple = rippleNoise(vertexUV) * 0.05 * windSpeed;
+    pos += vertexNormal * ripple;
+    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(pos, 1.0);
+    normal = vertexNormal;
+    uv = vertexUV;
+}
