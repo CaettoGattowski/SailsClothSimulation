@@ -9,7 +9,7 @@ namespace SailsClothSimulation
     public class SailClothSystem : ModSystem
     {
         ICoreClientAPI capi;
-        List<SailCloth> activeSails = new();
+        List<ClothSystemNew> activeSails = new();
         SailClothRenderer sailRenderer;
 
         public override bool ShouldLoad(EnumAppSide forSide) => forSide == EnumAppSide.Client;
@@ -19,14 +19,14 @@ namespace SailsClothSimulation
             capi = api;
 
             // Register sail shader
-            capi.Shader.RegisterFileShaderProgram("sail", "sail", out _);
+            capi.Shader.RegisterFileShaderProgram("Sail", "Sail", out _);
 
             // Create example sail
-            var sail = new SailCloth(capi, 12, 9, 0.25f, new Vec3d(0, 2, 0));
-            sail.AnchorCorner(0, 0);
-            sail.AnchorCorner(11, 0);
-            sail.AnchorCorner(0, 8);
-            activeSails.Add(sail);
+            var Sail = new SailCloth(capi, 12, 9, 0.25f, new Vec3d(0, 2, 0));
+            Sail.AnchorCorner(0, 0);
+            Sail.AnchorCorner(11, 0);
+            Sail.AnchorCorner(0, 8);
+            activeSails.Add(Sail);
 
             // Renderer
             sailRenderer = new SailClothRenderer(api, activeSails);
