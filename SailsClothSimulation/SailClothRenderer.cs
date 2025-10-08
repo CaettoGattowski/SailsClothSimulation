@@ -2,53 +2,47 @@
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
-using Vintagestory.GameContent;
-using static Vintagestory.API.Client.MeshRef;
 
 namespace SailsClothSimulation
 {
     public class SailClothRenderer : IRenderer
     {
-        ICoreClientAPI capi;
-        List<ClothSystemNew> Sail;
-        private int widthPoints;
-        private int heightPoints;
-        private float restDistance;
+        private readonly ICoreClientAPI capi;
+        private readonly List<ClothSystemNew> sails;
 
         public double RenderOrder => 0.5;
         public int RenderRange => 100;
 
-        public SailClothRenderer(ICoreClientAPI api, List<ClothSystemNew> Sail)
+        public SailClothRenderer(ICoreClientAPI api, List<ClothSystemNew> sails)
         {
             this.capi = api;
-            this.Sail = Sail;
+            this.sails = sails;
         }
 
         public void OnRenderFrame(float dt, EnumRenderStage stage)
         {
-            var prog = capi.Shader.GetProgram("Sail");
-            if (prog == null) return;
-
-            foreach (var Sail in Sail)
+            foreach (var sail in sails)
             {
-                // Build/update mesh for sail
-                Sail.BuildSailMesh(widthPoints, heightPoints, restDistance);
+                // Update/build mesh if necessary
+                sail.BuildSailMesh(sail.widthPoints, sail.heightPoints, sail.restDistance);
 
-                // Set uniforms
-                prog.Use();
-                prog.Uniform("time", Sail.TimeSeconds);
-                Vec3f windDir = (Vec3f)Sail.windSpeed;
-                windDir.Normalize();
-                prog.Uniform("windDir", windDir);
-                prog.Uniform("windSpeed", (float)Sail.windSpeed.Length());
-
-                // Render mesh
-                capi.Render.RenderMesh(Sail.MeshRef);
-
-                prog.Stop();
+                // Render the mesh using default material
+                if (sail.MeshRef != null)
+                {
+                    capi.Render.RenderMesh(sail.MeshRef);
+                }
             }
         }
 
-        public void Dispose() { }
+        public void Dispose()
+        {
+            // Dispose meshes if needed
+            foreach (var sail in sails)
+            {
+                sail.MeshRef?.Dispose();
+                sail.MeshRef = null;
+            }
+        }
     }
 }
+

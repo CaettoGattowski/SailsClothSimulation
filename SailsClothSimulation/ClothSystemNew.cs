@@ -1,18 +1,22 @@
-﻿using System;
+﻿using ProtoBuf;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using ProtoBuf;
+using System.Runtime.CompilerServices;
+using System.Runtime.Serialization;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
+using Vintagestory.API.Util;
 using Vintagestory.GameContent;
 
 namespace SailsClothSimulation;
 
 [ProtoContract]
 public class ClothSystemNew
+
 {
     [ProtoMember(1)]
     public int ClothId;
@@ -77,7 +81,7 @@ public class ClothSystemNew
     private Matrixf mat = new Matrixf();
 
     private float accum;
-    private ParticlePhysics partPhysics;
+    
 
     [ProtoMember(5)]
     public bool Active { get; set; }
@@ -96,8 +100,9 @@ public class ClothSystemNew
     public MeshRef MeshRef;
     public CustomMeshDataPartFloat MeshData;
 
-    private Vec3d origin;
     private int vertexCount = 0;
+
+    private ClothSystem baseSystem; // replaced all the "this" with base system to reflect the old ClothSystem to stop erroring
 
 
 
@@ -175,17 +180,17 @@ public class ClothSystemNew
 
     public static ClothSystemNew CreateCloth(ICoreAPI api, ClothManager cm, Vec3d start, Vec3d end)
     {
-        return new ClothSystemNew(api, cm, start, end, EnumExtendedClothType.Cloth);
+        return new ClothSystemNew(api, cm, start, end, EnumExtendedClothType.Cloth, 0, 0, 0);  
     }
 
     public static ClothSystemNew CreateRope(ICoreAPI api, ClothManager cm, Vec3d start, Vec3d end, AssetLocation clothSectionModel)
     {
-        return new ClothSystemNew(api, cm, start, end, EnumExtendedClothType.Rope, clothSectionModel);
+        return new ClothSystemNew(api, cm, start, end, EnumExtendedClothType.Rope, 0, 0, 0, clothSectionModel); 
     }
 
     public static ClothSystemNew CreateSail(ICoreAPI api, ClothManager cm, Vec3d start, Vec3d end, AssetLocation clothSectionModel)
     {
-        return new ClothSystemNew(api, cm, start, end, EnumExtendedClothType.Sail, clothSectionModel);
+        return new ClothSystemNew(api, cm, start, end, EnumExtendedClothType.Sail, 0, 0, 0, clothSectionModel);
     }
 
     private ClothSystemNew()
@@ -197,6 +202,9 @@ public class ClothSystemNew
         PointList pointList = Points2d[0];
         double num = (float)pointList.Points.Count / Resolution;
         bool flag = len > 0.0;
+
+        baseSystem = (ClothSystem)RuntimeHelpers.GetUninitializedObject(typeof(ClothSystem));
+
         if (flag && len + num > maxLen)
         {
             return false;
@@ -219,7 +227,7 @@ public class ClothSystemNew
         {
             for (int i = 0; i <= num4; i++)
             {
-                pointList.Points.Insert(0, new ClothPoint(this, num2++, firstPoint.Pos.X + (double)(num3 * (float)(i + 1)), firstPoint.Pos.Y, firstPoint.Pos.Z));
+                pointList.Points.Insert(0, new ClothPoint(baseSystem, num2++, firstPoint.Pos.X + (double)(num3 * (float)(i + 1)), firstPoint.Pos.Y, firstPoint.Pos.Z));
                 ClothPoint p2 = pointList.Points[0];
                 ClothPoint p3 = pointList.Points[1];
                 ClothConstraint item = new ClothConstraint(p2, p3);
@@ -257,6 +265,7 @@ public class ClothSystemNew
         genDebugMesh();
         return true;
     }
+    
 
     private ClothSystemNew(ICoreAPI api, ClothManager cm, Vec3d start, Vec3d end, EnumExtendedClothType clothType, int widthPoints, int heightPoints, float restDistance, AssetLocation ropeSectionModel = null)
     {
@@ -264,9 +273,12 @@ public class ClothSystemNew
         this.clothType = clothType == EnumExtendedClothType.Rope ? EnumClothType.Rope : EnumClothType.Cloth;
         this.ropeSectionModel = ropeSectionModel;
 
-        this.widthPoints = widthPoints;
-        this.heightPoints = heightPoints;
-        this.restDistance = restDistance;
+        this.widthPoints = widthPoints > 0 ? widthPoints : 12;
+        this.heightPoints = heightPoints > 0 ? heightPoints : 8;
+        this.restDistance = restDistance > 0 ? restDistance : 0.25f;
+
+        baseSystem = (ClothSystem)RuntimeHelpers.GetUninitializedObject(typeof(ClothSystem));
+
 
         Init(api, cm);
         _ = 1f / Resolution;
@@ -281,7 +293,7 @@ public class ClothSystemNew
             for (int i = 0; i <= num2; i++)
             {
                 float num3 = (float)i / (float)num2;
-                pointList.Points.Add(new ClothPoint(this, i,
+                pointList.Points.Add(new ClothPoint(baseSystem, i,
                     start.X + vec3d.X * num3,
                     start.Y + vec3d.Y * num3,
                     start.Z + vec3d.Z * num3));
@@ -311,14 +323,14 @@ public class ClothSystemNew
                 Points2d.Add(col);
                 for (int y = 0; y < heightPoints; y++)
                 {
-                    Vec3d pos = origin + new Vec3d(
+                    Vec3d pos = start + new Vec3d(
                         (x - (widthPoints - 1) / 2.0) * restDistance, -y * restDistance, 0);
-                    col.Points.Add(new ClothPoint(this, pointIndex++, pos.X, pos.Y, pos.Z));
+                    col.Points.Add(new ClothPoint(baseSystem, pointIndex++, pos.X, pos.Y, pos.Z));
                 }
             }
 
             GenerateSailConstraints(widthPoints, heightPoints, restDistance);
-            MeshData = new CustomMeshDataPartFloat(capi)
+            MeshData = new CustomMeshDataPartFloat(5) // 3 xyz pos + 2 uv
             {
                 Count = 0,
                 Values = new float[widthPoints * heightPoints * 8] // rough estimate
@@ -340,7 +352,7 @@ public class ClothSystemNew
             {
                 double num9 = (double)j / num4;
                 double num10 = (double)k / num5;
-                Points2d[j].Points.Add(new ClothPoint(this, num8++, start.X + vec3d.X * num9, start.Y + vec3d.Y * num10, start.Z + vec3d.Z * num9));
+                Points2d[j].Points.Add(new ClothPoint(baseSystem, num8++, start.X + vec3d.X * num9, start.Y + vec3d.Y * num10, start.Z + vec3d.Z * num9));
                 if (j > 0)
                 {
                     ClothPoint p3 = Points2d[j - 1].Points[k];
@@ -587,6 +599,8 @@ public class ClothSystemNew
 
     public void restoreReferences()
     {
+        baseSystem = (ClothSystem)RuntimeHelpers.GetUninitializedObject(typeof(ClothSystem));
+
         if (!Active)
         {
             return;
@@ -596,7 +610,7 @@ public class ClothSystemNew
         WalkPoints(delegate (ClothPoint p)
         {
             pointsByIndex[p.PointIndex] = p;
-            p.restoreReferences(this, api.World);
+            p.restoreReferences(baseSystem, api.World);
         });
         foreach (ClothConstraint constraint in Constraints)
         {
@@ -637,11 +651,13 @@ public class ClothSystemNew
                         PointY = j,
                         Point = clothPoint
                     });
-                    clothPoint.Dirty = false;
+                    // clothPoint.Dirty = false; SOS for some reason it kept giving me an error here so i just removed it to see if the rest of the logic works SOS
                 }
             }
         }
     }
+
+
 
     public void updatePoint(ClothPointPacket msg)
     {
@@ -672,14 +688,26 @@ public class ClothSystemNew
         }
     }
 
-    private void GenerateSailConstraints(int widthPoints, int heightPoints, float restDistance)
+    public void GenerateSailConstraints(int widthPoints, int heightPoints, float restDistance)
     {
         Constraints.Clear();
 
         for (int x = 0; x < widthPoints; x++)
         {
+            if (x >= Points2d.Count)
+            {
+                capi.Logger.Warning("Skipped x={x}, Points2d.Count={Points2d.Count}");
+                continue;
+            }
+
             for (int y = 0; y < heightPoints; y++)
             {
+                if (y >= Points2d[x].Points.Count)
+                {
+                    capi.Logger.Warning("Skipped y={y}, Points2d[{x}].Points.Count={Points2d[x].Points.Count}");
+                    continue;
+                }
+
                 var p = Points2d[x].Points[y];
 
                 // Structural constraints
@@ -693,10 +721,10 @@ public class ClothSystemNew
                     Constraints.Add(new ClothConstraint(p, Points2d[x - 1].Points[y + 1]));
 
                 // Bending constraints
-                if (x + 2 < widthPoints) Constraints.Add(new ClothConstraint(p, Points2d[x + 2].Points[y]) * 0.35f);
-                if (y + 2 < heightPoints) Constraints.Add(new ClothConstraint(p, Points2d[x].Points[y + 2]) * 0.35f);
+                if (x + 2 < widthPoints) Constraints.Add(new ClothConstraint(p, Points2d[x + 2].Points[y]));
+                if (y + 2 < heightPoints) Constraints.Add(new ClothConstraint(p, Points2d[x].Points[y + 2]));
                 if (x + 2 < widthPoints && y + 2 < heightPoints)
-                    Constraints.Add(new ClothConstraint(p, Points2d[x + 2].Points[y + 2]) * 0.35f);
+                    Constraints.Add(new ClothConstraint(p, Points2d[x + 2].Points[y + 2]));
             }
         }
     }
@@ -705,6 +733,7 @@ public class ClothSystemNew
     {
         if (extendedClothType != EnumExtendedClothType.Sail) return;
 
+        MeshData mesh = new MeshData(true);
 
         for (int x = 0; x < widthPoints - 1; x++)
         {
@@ -717,21 +746,42 @@ public class ClothSystemNew
 
                 Vec3f n = ComputeNormal(x, y);
 
-                int i00 = MeshData.AddVertex((Vec3f)p00.Pos, n, new Vec2f((float)x / (widthPoints - 1), (float)y / (heightPoints - 1)));
-                int i10 = MeshData.AddVertex((Vec3f)p10.Pos, n, new Vec2f((float)(x + 1) / (widthPoints - 1), (float)y / (heightPoints - 1)));
-                int i11 = MeshData.AddVertex((Vec3f)p11.Pos, n, new Vec2f((float)(x + 1) / (widthPoints - 1), (float)(y + 1) / (heightPoints - 1)));
-                int i01 = MeshData.AddVertex((Vec3f)p01.Pos, n, new Vec2f((float)x / (widthPoints - 1), (float)(y + 1) / (heightPoints - 1)));
+                int i00 = mesh.VerticesCount;
+                mesh.AddVertex((float)p00.Pos.X, (float)p00.Pos.Y, (float)p00.Pos.Z, x / (float)(widthPoints - 1), y / (float)(heightPoints - 1));
+                mesh.AddNormal(n.X, n.Y, n.Z);
 
-                MeshData.AddTriangle(i00, i10, i11);
-                MeshData.AddTriangle(i00, i11, i01);
+                int i10 = mesh.VerticesCount;
+                mesh.AddVertex((float)p10.Pos.X, (float)p10.Pos.Y, (float)p10.Pos.Z, (x + 1) / (float)(widthPoints - 1), y / (float)(heightPoints - 1));
+                mesh.AddNormal(n.X, n.Y, n.Z);
+
+                int i11 = mesh.VerticesCount;
+                mesh.AddVertex((float)p11.Pos.X, (float)p11.Pos.Y, (float)p11.Pos.Z, (x + 1) / (float)(widthPoints - 1), (y + 1) / (float)(heightPoints - 1));
+                mesh.AddNormal(n.X, n.Y, n.Z);
+
+                int i01 = mesh.VerticesCount;
+                mesh.AddVertex((float)p01.Pos.X, (float)p01.Pos.Y, (float)p01.Pos.Z, x / (float)(widthPoints - 1), (y + 1) / (float)(heightPoints - 1));
+                mesh.AddNormal(n.X, n.Y, n.Z);
+
+
+                mesh.AddIndices(i00, i10, i11, i00, i11, i01);
             }
         }
 
         if (MeshRef == null)
-            MeshRef = capi.Render.UploadMesh(MeshData.ToMeshData());
+            MeshRef = capi.Render.UploadMesh(mesh);
         else
-            capi.Render.UpdateMesh(MeshRef, MeshData.ToMeshData());
+            capi.Render.UpdateMesh(MeshRef, mesh);
     }
+
+
+    private void AddTriangle(MeshData mesh, int i0, int i1, int i2)
+    {
+        mesh.Indices.Append(i0);
+        mesh.Indices.Append(i1);
+        mesh.Indices.Append(i2);
+    }
+
+
 
     // helper functions
 
