@@ -1,25 +1,33 @@
 ﻿using HarmonyLib;
+using System.Reflection;
 using Vintagestory.API.Client;
 using Vintagestory.API.Common;
 using Vintagestory.GameContent;
 
 namespace SailsClothSimulation
 {
-    [HarmonyPatch(typeof(EntityBoat), "OnRenderFrame")]
+    [HarmonyPatch]
     public static class BoatRenderPatch
     {
-        public static void Postfix(EntityBoat __instance, float dt, EnumRenderStage stage)
+        static MethodBase TargetMethod()
         {
-            // Only run during normal render stages
-            if (stage != EnumRenderStage.Before || __instance.Api.Side != EnumAppSide.Client)
-                return;
+            
+            return AccessTools.Method(typeof(EntityBoat), "OnRenderFrame");
+        }
 
-            // Access the client API
-            ICoreClientAPI capi = __instance.Api as ICoreClientAPI;
+        static void Postfix(object __instance, float dt, EnumRenderStage stage)
+        {
+            // Only run during visible render stages
+            if (stage != EnumRenderStage.Before) return;
+
+            var capi = (ICoreClientAPI)typeof(EntityBoat)
+                .GetField("capi", BindingFlags.Instance | BindingFlags.NonPublic)
+                ?.GetValue(__instance);
+
             if (capi == null) return;
 
-            // Call your sail modifier
             SailVisualModifier.ApplyWindEffect(__instance, capi, dt);
         }
     }
+
 }
