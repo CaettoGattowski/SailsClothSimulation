@@ -6,51 +6,56 @@ using Vintagestory.GameContent;
 
 namespace SailsClothSimulation
 {
+    /// <summary>
+    /// Applies a dynamic wind-based visual effect to a boat's sail.
+    /// This doesn't replace the mesh – it offsets rotation angles
+    /// to mimic realistic cloth flutter driven by wind strength and direction.
+    /// </summary>
     public static class SailVisualModifier
     {
-        // state variables for a simple spring-based motion
-        static float sailAngle, sailVelocity;
+        private static readonly Random Rand = new();
 
-        public static void ApplyWindEffect(object boatEntity, ICoreClientAPI capi, float dt)
+        // Controls how reactive the sail is to wind.
+        private const float MaxFlutterAngle = 10f;   // degrees
+        private const float FlutterSpeed = 2.5f;     // oscillation speed multiplier
+        private const float WindInfluence = 0.6f;    // how much the global wind direction affects swing
+        private const float Damping = 0.9f;          // smooths oscillation over time
+
+        private static float currentSailBendX = 0f;
+        private static float currentSailBendZ = 0f;
+        private static float flutterPhase = 0f;
+
+        public static void ApplyWindEffect(EntityBoat boat, ICoreClientAPI capi, float dt)
         {
-            // Retrieve the renderer or shape associated with this boat
-            var renderer = GetEntityRenderer(boatEntity);
-            if (renderer == null) return;
+            if (boat?.Properties?.Client?.Renderer is not EntityShapeRenderer renderer) return;
+            if (!boat.Alive) return;
 
-            var shape = renderer?.TesselationData?.Shape;
-            if (shape == null) return;
+            var wind = GlobalConstants.CurrentWindSpeedClient;
+            float windSpeed = wind.Length();
+            if (windSpeed < 0.05f) return; // calm, skip for performance
 
-            var sail = shape.GetElementByName("SailUnfurled");
-            if (sail == null) return;
+            // Simulate gentle sine-based flutter using wind + time
+            flutterPhase += dt * FlutterSpeed * (0.8f + (float)Rand.NextDouble() * 0.4f);
 
-            // --- physics model ---
-            Vec3f wind = GlobalConstants.CurrentWindSpeedClient;
-            float strength = wind.Length();
-            float dir = (float)Math.Atan2(wind.X, wind.Z);
+            float flutter = MathF.Sin(flutterPhase * 2f) * (0.5f + 0.5f * (float)Math.Sin(flutterPhase));
+            float gustEffect = 0.5f + 0.5f * MathF.Sin(flutterPhase * 0.3f + (float)Rand.NextDouble() * 2f);
 
-            float target = GameMath.Clamp(strength * GameMath.Sin(dir - renderer.EntityPos.Yaw), -0.6f, 0.6f);
-            float stiffness = 3f;
-            float damping = 1.5f;
+            // Calculate desired bend due to wind
+            float targetBendX = wind.Z * MaxFlutterAngle * WindInfluence * windSpeed * gustEffect;
+            float targetBendZ = -wind.X * MaxFlutterAngle * WindInfluence * windSpeed * gustEffect;
 
-            sailVelocity += (target - sailAngle) * stiffness * dt;
-            sailVelocity -= sailVelocity * damping * dt;
-            sailAngle += sailVelocity * dt;
+            // Smooth interpolation to prevent snapping
+            currentSailBendX += (targetBendX - currentSailBendX) * (1 - Damping) * 5f * dt;
+            currentSailBendZ += (targetBendZ - currentSailBendZ) * (1 - Damping) * 5f * dt;
 
-            float flutter = GameMath.Sin((float)capi.InWorldEllapsedMilliseconds / 120f + dir)
-                            * strength * 0.05f;
-            float finalAngle = sailAngle + flutter;
+            // Add flutter offset
+            float flutterOffsetX = MathF.Sin(flutterPhase * 3f) * 1.2f;
+            float flutterOffsetZ = MathF.Cos(flutterPhase * 2.1f) * 1.2f;
 
-            // --- apply transform ---
-            sail.Rotation.Z = finalAngle * GameMath.RAD2DEG;
-            sail.Rotation.X = flutter * 10f;
-        }
-
-        // You implement a helper that uses reflection to find the renderer
-        static dynamic GetEntityRenderer(object boatEntity)
-        {
-            // e.g. return the private "entityShapeRenderer" field from EntityBoat
-            return null; // fill in
+            // Apply total effect to renderer rotation
+            renderer.xangle += (currentSailBendX + flutterOffsetX) * dt;
+            renderer.zangle += (currentSailBendZ + flutterOffsetZ) * dt;
         }
     }
-
 }
+

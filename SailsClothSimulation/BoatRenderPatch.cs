@@ -17,17 +17,16 @@ namespace SailsClothSimulation
 
         static void Postfix(object __instance, float dt, EnumRenderStage stage)
         {
-            // Only run during visible render stages
-            if (stage != EnumRenderStage.Before) return;
+            var boat = __instance as EntityBoat;
+            if (boat == null) return;
 
-            var capi = (ICoreClientAPI)typeof(EntityBoat)
-                .GetField("capi", BindingFlags.Instance | BindingFlags.NonPublic)
-                ?.GetValue(__instance);
-
+            var capiField = AccessTools.Field(typeof(EntityBoat), "capi");
+            var capi = (ICoreClientAPI)capiField?.GetValue(boat);
             if (capi == null) return;
 
-            SailVisualModifier.ApplyWindEffect(__instance, capi, dt);
+            SailVisualModifier.ApplyWindEffect(boat, capi, dt);
         }
+
     }
 
 }
