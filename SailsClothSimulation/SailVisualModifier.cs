@@ -1,61 +1,71 @@
 ﻿using System;
 using Vintagestory.API.Client;
+using Vintagestory.API.Common;
 using Vintagestory.API.Config;
 using Vintagestory.API.MathTools;
 using Vintagestory.GameContent;
 
 namespace SailsClothSimulation
 {
-    /// <summary>
-    /// Applies a dynamic wind-based visual effect to a boat's sail.
-    /// This doesn't replace the mesh – it offsets rotation angles
-    /// to mimic realistic cloth flutter driven by wind strength and direction.
-    /// </summary>
     public static class SailVisualModifier
     {
         private static readonly Random Rand = new();
 
-        // Controls how reactive the sail is to wind.
-        private const float MaxFlutterAngle = 10f;   // degrees
-        private const float FlutterSpeed = 2.5f;     // oscillation speed multiplier
-        private const float WindInfluence = 0.6f;    // how much the global wind direction affects swing
-        private const float Damping = 0.9f;          // smooths oscillation over time
-
-        private static float currentSailBendX = 0f;
-        private static float currentSailBendZ = 0f;
-        private static float flutterPhase = 0f;
+        private const float MaxLeanAngle = 35f;   // degrees — very visible
+        private const float FlutterAngle = 5f;    // small fast flutter
+        private const float FlutterSpeed = 3f;    // speed multiplier
 
         public static void ApplyWindEffect(EntityBoat boat, ICoreClientAPI capi, float dt)
         {
             if (boat?.Properties?.Client?.Renderer is not EntityShapeRenderer renderer) return;
             if (!boat.Alive) return;
 
+            // Use reflection to get the private field "shape"
+            var shapeField = HarmonyLib.AccessTools.Field(renderer.GetType(), "shape");
+            var shape = shapeField?.GetValue(renderer) as Shape;
+            if (shape == null) return;
+
+            // Figure out which sail is active
+            int sailPos = boat.WatchedAttributes.GetInt("sailPosition");
+            string sailName = sailPos switch
+            {
+                0 => "SailUnfurled",
+                1 => "SailHalf",
+                2 => "SailHalf",
+                _ => "SailUnfurled"
+            };
+
+            var sail = shape.GetElementByName(sailName);
+            if (sail == null) return;
+
             var wind = GlobalConstants.CurrentWindSpeedClient;
             float windSpeed = wind.Length();
-            if (windSpeed < 0.05f) return; // calm, skip for performance
+            if (windSpeed < 0.05f) return;
 
-            // Simulate gentle sine-based flutter using wind + time
-            flutterPhase += dt * FlutterSpeed * (0.8f + (float)Rand.NextDouble() * 0.4f);
+            // Simulate flutter + large lean
+            float flutterPhase = (float)capi.World.ElapsedMilliseconds / 1000f * FlutterSpeed;
+            float flutter = MathF.Sin(flutterPhase * 10f) * FlutterAngle * windSpeed;
 
-            float flutter = MathF.Sin(flutterPhase * 2f) * (0.5f + 0.5f * (float)Math.Sin(flutterPhase));
-            float gustEffect = 0.5f + 0.5f * MathF.Sin(flutterPhase * 0.3f + (float)Rand.NextDouble() * 2f);
+            // Compute visible lean angles
+            float targetLeanX = wind.Z * MaxLeanAngle * windSpeed;
+            float targetLeanZ = -wind.X * MaxLeanAngle * windSpeed;
 
-            // Calculate desired bend due to wind
-            float targetBendX = wind.Z * MaxFlutterAngle * WindInfluence * windSpeed * gustEffect;
-            float targetBendZ = -wind.X * MaxFlutterAngle * WindInfluence * windSpeed * gustEffect;
+            // Combine base lean + flutter
+            sail.RotationX = targetLeanX + flutter;
+            sail.RotationZ = targetLeanZ + flutter * 0.5f;
 
-            // Smooth interpolation to prevent snapping
-            currentSailBendX += (targetBendX - currentSailBendX) * (1 - Damping) * 5f * dt;
-            currentSailBendZ += (targetBendZ - currentSailBendZ) * (1 - Damping) * 5f * dt;
+            // Make the rotation look like it's pivoting near the bottom of the sail
+            if (sail.RotationOrigin != null && sail.RotationOrigin.Length == 3)
+            {
+                // Push origin downward slightly for visible swing
+                sail.RotationOrigin[1] = Math.Clamp(sail.RotationOrigin[1] - 1.5, -4, 4);
+            }
 
-            // Add flutter offset
-            float flutterOffsetX = MathF.Sin(flutterPhase * 3f) * 1.2f;
-            float flutterOffsetZ = MathF.Cos(flutterPhase * 2.1f) * 1.2f;
-
-            // Apply total effect to renderer rotation
-            renderer.xangle += (currentSailBendX + flutterOffsetX) * dt;
-            renderer.zangle += (currentSailBendZ + flutterOffsetZ) * dt;
+            // Optional: scale slightly to look like the sail stretches under pressure
+            sail.ScaleZ = 1.0 + windSpeed * 0.3;
         }
     }
 }
+
+
 
