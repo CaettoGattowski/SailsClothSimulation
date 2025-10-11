@@ -9,34 +9,49 @@ namespace SailsClothSimulation
 {
     public class WindPhysicsModSystem : ModSystem
     {
-        Harmony harmony;
+        private Harmony harmony; // <-- field reference
 
         public override bool ShouldLoad(EnumAppSide side) => side == EnumAppSide.Client;
 
         public override void StartClientSide(ICoreClientAPI api)
         {
-            var harmony = new Harmony("WindSailsPhysics.dynamicsails");
-            harmony.PatchAll(); // <-- no assignment here
+            // Initialize Harmony using your unique ID
+            Harmony harmony = new Harmony("WindSailsPhysics.dynamicsails");
 
+            // Patch all classes with [HarmonyPatch] in this assembly
+            harmony.PatchAll();
             api.Logger.Notification("[DynamicSails] Harmony PatchAll executed");
 
-            foreach (var type in AccessTools.GetTypesFromAssembly(Assembly.GetExecutingAssembly()))
+            // Optional: list all found patch classes
+            var patchTypes = AccessTools.GetTypesFromAssembly(Assembly.GetExecutingAssembly())
+                                        .Where(t => Attribute.IsDefined(t, typeof(HarmonyPatch)));
+            foreach (var type in patchTypes)
             {
-                if (Attribute.IsDefined(type, typeof(HarmonyPatch)))
-                    api.Logger.Notification($"[DynamicSails] Found patch class: {type.Name}");
+                api.Logger.Notification($"[DynamicSails] Found patch class: {type.Name}");
             }
 
+            // Optional: inspect EntityBoat methods
             var boatType = typeof(Vintagestory.GameContent.EntityBoat);
             api.Logger.Notification("[DynamicSails] Inspecting methods on EntityBoat...");
-
             foreach (var m in boatType.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
             {
-                if (m.Name.Contains("Render", StringComparison.OrdinalIgnoreCase))
+                if (m.Name.Contains("Render", StringComparison.OrdinalIgnoreCase) ||
+                    m.Name.Contains("Frame", StringComparison.OrdinalIgnoreCase))
+                {
                     api.Logger.Notification($"[DynamicSails] Found method: {m.Name}({string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name))})");
+                }
+            }
+
+            // Define a debug wind push setting if it doesn't exist yet
+            // Set default value at mod startup
+            api.Settings.Bool["showDebugWindPush"] = api.Settings.Bool["showDebugWindPush"]; // ensures key exists
+
+
+            if (api.Settings.Bool["showDebugWindPush"])
+            {
+                // render debug wind push line
             }
         }
-
-
 
         public override void Dispose()
         {
@@ -44,4 +59,5 @@ namespace SailsClothSimulation
         }
     }
 }
+
 
